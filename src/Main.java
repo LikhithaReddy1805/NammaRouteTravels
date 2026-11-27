@@ -1,164 +1,128 @@
-
 import model.Bus;
-import service.BusService;
 import service.BookingService;
+import service.BusService;
 import util.InputValidator;
 
+import java.time.LocalDateTime;
 import java.util.Scanner;
 
 public class Main {
 
     public static void main(String[] args) {
-
         Scanner sc = new Scanner(System.in);
 
         BusService busService = new BusService();
-        BookingService bookingService = new BookingService();
+        BookingService bookingService =
+                new BookingService(busService.getBuses());
 
-        bookingService.restoreBookedSeats(busService.getBuses());
+        System.out.println("\n===============================================");
+        System.out.println("             NAMMAROUTE TRAVELS");
+        System.out.println("        BUS TICKET MANAGEMENT SYSTEM");
+        System.out.println("===============================================");
 
-        while (true) {
+        boolean running = true;
 
-            System.out.println("\n====================================");
-            System.out.println("       NAMMAROUTE TRAVELS");
-            System.out.println("====================================");
-            System.out.println("1. Add Bus Service");
-            System.out.println("2. View All Bus Services");
+        while (running) {
+            System.out.println("\n1. Add Bus Service");
+            System.out.println("2. View Upcoming Bus Services");
             System.out.println("3. View Seat Map");
             System.out.println("4. Book Tickets");
-            System.out.println("5. Exit");
-            System.out.println("====================================");
-            System.out.print("Enter your choice: ");
+            System.out.println("5. Cancel Tickets");
+            System.out.println("6. Generate Passenger Manifest");
+            System.out.println("7. View Waitlist");
+            System.out.println("8. Exit");
 
-            String choice = sc.nextLine().trim();
+            int choice = InputValidator.readInt(
+                    sc, "\nEnter your choice: ", 1, 8
+            );
 
             switch (choice) {
-
-                case "1":
-                    addBus(sc, busService);
-                    break;
-
-                case "2":
-                    busService.viewAllBuses();
-                    break;
-
-                case "3":
-                    System.out.print("Enter Route ID: ");
-                    String routeId = sc.nextLine().trim();
-
-                    busService.displaySeatMap(routeId);
-                    break;
-
-                case "4":
-                    System.out.print("Enter Route ID: ");
-                    String bookingRoute = sc.nextLine().trim();
-
-                    Bus bus = busService.findBus(bookingRoute);
-
-                    if (bus == null) {
-                        System.out.println("Invalid Route ID.");
-                    } else {
-                        bookingService.bookTickets(bus, sc);
-                    }
-                    break;
-
-                case "5":
-                    System.out.println("Thank you for using NammaRoute Travels!");
-                    sc.close();
-                    return;
-
-                default:
-                    System.out.println("Invalid choice. Please try again.");
+                case 1 -> addBus(busService, sc);
+                case 2 -> busService.displayUpcomingBuses();
+                case 3 -> viewSeatMap(busService, sc);
+                case 4 -> bookingService.bookTickets(
+                        busService.getBuses(), sc
+                );
+                case 5 -> bookingService.cancelTickets(
+                        busService.getBuses(), sc
+                );
+                case 6 -> bookingService.generateManifest(
+                        busService.getBuses(), sc
+                );
+                case 7 -> bookingService.displayWaitlist(
+                        busService.getBuses(), sc
+                );
+                case 8 -> {
+                    running = false;
+                    System.out.println(
+                            "Thank you for using NammaRoute Travels. Goodbye!"
+                    );
+                }
             }
         }
+
+        sc.close();
     }
 
-    private static void addBus(Scanner sc, BusService busService) {
-
+    private static void addBus(BusService busService, Scanner sc) {
         System.out.println("\n========== ADD BUS SERVICE ==========");
 
-        System.out.print("Enter Route ID (Example NR-101): ");
-        String routeId = sc.nextLine().trim();
+        String routeId = InputValidator.readRouteId(sc);
+        String origin = InputValidator.readNonEmpty(sc, "Origin: ");
+        String destination = InputValidator.readNonEmpty(sc, "Destination: ");
 
-        if (!InputValidator.isValidRouteId(routeId)) {
-            System.out.println("Invalid Route ID format.");
+        if (origin.equalsIgnoreCase(destination)) {
+            System.out.println(
+                    "Origin and destination cannot be the same."
+            );
             return;
         }
 
-        if (busService.findBus(routeId) != null) {
-            System.out.println("Route ID already exists.");
-            return;
-        }
+        LocalDateTime departure =
+                InputValidator.readFutureDateTime(sc);
 
-        System.out.print("Enter Origin: ");
-        String origin = sc.nextLine().trim();
+        double price =
+                InputValidator.readPositiveDouble(
+                        sc, "Base ticket price (Rs.): "
+                );
 
-        if (!InputValidator.isValidName(origin)) {
-            System.out.println("Invalid origin.");
-            return;
-        }
+        System.out.println("\nBus type:");
+        System.out.println("1. 2x2 Seater (32 seats)");
+        System.out.println("2. 2x1 Sleeper (24 berths)");
 
-        System.out.print("Enter Destination: ");
-        String destination = sc.nextLine().trim();
+        int typeChoice =
+                InputValidator.readInt(sc, "Choose bus type: ", 1, 2);
 
-        if (!InputValidator.isValidName(destination)
-                || origin.equalsIgnoreCase(destination)) {
-            System.out.println("Invalid destination.");
-            return;
-        }
-
-        System.out.print("Enter Departure Date and Time (yyyy-MM-dd HH:mm): ");
-        String departure = sc.nextLine().trim();
-
-        if (!InputValidator.isValidDeparture(departure)) {
-            System.out.println("Invalid date or time format.");
-            return;
-        }
-
-        System.out.print("Enter Base Ticket Price: ");
-
-        double price;
-
-        try {
-            price = Double.parseDouble(sc.nextLine().trim());
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid ticket price.");
-            return;
-        }
-
-        if (!InputValidator.isValidPrice(price)) {
-            System.out.println("Ticket price must be greater than zero.");
-            return;
-        }
-
-        System.out.println("\nSelect Bus Type:");
-        System.out.println("1. 2x2 Seater (32 Seats)");
-        System.out.println("2. 2x1 Sleeper (24 Berths)");
-        System.out.print("Enter choice: ");
-
-        String typeChoice = sc.nextLine().trim();
-
-        String busType;
-
-        if (typeChoice.equals("1")) {
-            busType = "Seater";
-        } else if (typeChoice.equals("2")) {
-            busType = "Sleeper";
-        } else {
-            System.out.println("Invalid bus type.");
-            return;
-        }
+        String type = typeChoice == 1 ? "Seater" : "Sleeper";
 
         Bus bus = new Bus(
-                routeId, origin, destination,
-                departure, price, busType
+                routeId,
+                origin,
+                destination,
+                departure,
+                price,
+                type
         );
 
         if (busService.addBus(bus)) {
-            System.out.println("\nBus service added successfully!");
-            System.out.println("Total Seats/Berths: " + bus.getSeats().size());
+            System.out.println("Bus service added successfully.");
         } else {
-            System.out.println("Unable to add bus service.");
+            System.out.println(
+                    "A bus with this Route ID already exists."
+            );
+        }
+    }
+
+    private static void viewSeatMap(
+            BusService busService, Scanner sc
+    ) {
+        String routeId = InputValidator.readRouteId(sc);
+        Bus bus = busService.findBus(routeId);
+
+        if (bus == null) {
+            System.out.println("Bus route not found.");
+        } else {
+            bus.displaySeatMap();
         }
     }
 }

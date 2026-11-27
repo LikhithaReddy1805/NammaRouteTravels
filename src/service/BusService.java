@@ -3,112 +3,222 @@ package service;
 
 import model.Bus;
 
-import java.io.*;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 public class BusService {
-    private List<Bus> buses = new ArrayList<>();
-    private final String FILE = "data/buses.csv";
+
+    private static final Path FILE =
+            Path.of("data", "buses.csv");
+
+    private static final DateTimeFormatter[] DATE_FORMATS = {
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
+            DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
+    };
+
+    private static final DateTimeFormatter SAVE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+    private final List<Bus> buses = new ArrayList<>();
 
     public BusService() {
         loadBuses();
     }
 
     public boolean addBus(Bus bus) {
+
         if (findBus(bus.getRouteId()) != null) {
             return false;
         }
 
         buses.add(bus);
         saveBuses();
+
         return true;
     }
 
     public Bus findBus(String routeId) {
+
         for (Bus bus : buses) {
+
             if (bus.getRouteId().equalsIgnoreCase(routeId)) {
                 return bus;
             }
         }
+
         return null;
     }
 
     public List<Bus> getBuses() {
-        return buses;
+        return new ArrayList<>(buses);
     }
 
-    public void viewAllBuses() {
-        if (buses.isEmpty()) {
-            System.out.println("No bus services available.");
+    public void displayUpcomingBuses() {
+
+        List<Bus> upcoming = buses.stream()
+                .filter(bus ->
+                        bus.getDeparture().isAfter(LocalDateTime.now()))
+                .sorted(Comparator.comparing(Bus::getDeparture))
+                .toList();
+
+        if (upcoming.isEmpty()) {
+            System.out.println("No upcoming bus services found.");
             return;
         }
 
-        System.out.println("\n========== BUS SERVICES ==========");
+        System.out.println(
+                "\n================ UPCOMING BUS SERVICES ================"
+        );
 
-        for (Bus bus : buses) {
-            System.out.println("Route ID: " + bus.getRouteId());
-            System.out.println("Route: " + bus.getOrigin()
-                    + " -> " + bus.getDestination());
-            System.out.println("Departure: " + bus.getDeparture());
-            System.out.println("Price: Rs." + bus.getPrice());
-            System.out.println("Bus Type: " + bus.getBusType());
-            System.out.println("Total Seats: " + bus.getSeats().size());
-            System.out.println("----------------------------------");
-        }
-    }
+        System.out.printf(
+                "%-12s %-18s %-18s %-22s %-12s %-12s %-10s%n",
+                "Route ID",
+                "Origin",
+                "Destination",
+                "Departure",
+                "Type",
+                "Fare",
+                "Available"
+        );
 
-    public void displaySeatMap(String routeId) {
-        Bus bus = findBus(routeId);
+        for (Bus bus : upcoming) {
 
-        if (bus == null) {
-            System.out.println("Invalid Route ID.");
-            return;
-        }
-
-        bus.displaySeatMap();
-    }
-
-    private void saveBuses() {
-        try (PrintWriter writer = new PrintWriter(new FileWriter(FILE))) {
-            for (Bus bus : buses) {
-                writer.println(
-                        bus.getRouteId() + "|" +
-                        bus.getOrigin() + "|" +
-                        bus.getDestination() + "|" +
-                        bus.getDeparture() + "|" +
-                        bus.getPrice() + "|" +
-                        bus.getBusType()
-                );
-            }
-        } catch (IOException e) {
-            System.out.println("Error saving bus details: " + e.getMessage());
+            System.out.printf(
+                    "%-12s %-18s %-18s %-22s %-12s Rs.%-9.2f %-10d%n",
+                    bus.getRouteId(),
+                    bus.getOrigin(),
+                    bus.getDestination(),
+                    bus.getDepartureDisplay(),
+                    bus.getBusType(),
+                    bus.getBasePrice(),
+                    bus.getAvailableCount()
+            );
         }
     }
 
     private void loadBuses() {
-        File file = new File(FILE);
 
-        if (!file.exists()) {
+        if (!Files.exists(FILE)) {
             return;
         }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line;
+        try {
 
-            while ((line = reader.readLine()) != null) {
-                String[] data = line.split("\\|", -1);
+            List<String> lines =
+                    Files.readAllLines(FILE, StandardCharsets.UTF_8);
 
-                if (data.length == 6) {
+            for (String line : lines) {
+
+                if (line.isBlank()) {
+                    continue;
+                }
+
+                try {
+                    line = line.replace("\uFEFF", "").trim();
+
+                    String[] p;
+
+                    if (line.contains("|")) {
+                        p = line.split("\\|", -1);
+                    } else {
+                        p = line.split(",", -1);
+                    }
+
+                    if (p.length != 6) {
+                        System.out.println(
+                                "Skipping invalid bus record: " + line
+                        );
+                        continue;
+                    }
+
+                    LocalDateTime departure = parseDate(p[3].trim());
+
                     Bus bus = new Bus(
-                            data[0], data[1], data[2],
-                            data[3], Double.parseDouble(data[4]), data[5]
+                            p[0].trim(),
+                            p[1].trim(),
+                            p[2].trim(),
+                            departure,
+                            Double.parseDouble(p[4].trim()),
+                            p[5].trim()
                     );
-                    buses.add(bus);
+
+                    if (findBus(bus.getRouteId()) == null) {
+                        buses.add(bus);
+                    }
+
+                } catch (Exception ex) {
+
+                    System.out.println(
+                            "Skipping invalid bus record: " + line
+                    );
                 }
             }
-        } catch (IOException | NumberFormatException e) {
-            System.out.println("Error loading buses: " + e.getMessage());
+
+        } catch (IOException ex) {
+
+            System.out.println(
+                    "Warning: Could not read buses.csv: "
+                            + ex.getMessage()
+            );
+        }
+    }
+
+    private LocalDateTime parseDate(String date) {
+
+        for (DateTimeFormatter formatter : DATE_FORMATS) {
+
+            try {
+                return LocalDateTime.parse(date, formatter);
+            } catch (Exception ignored) {
+            }
+        }
+
+        throw new IllegalArgumentException(
+                "Invalid departure date: " + date
+        );
+    }
+
+    private void saveBuses() {
+
+        try {
+
+            Files.createDirectories(FILE.getParent());
+
+            List<String> lines = new ArrayList<>();
+
+            for (Bus bus : buses) {
+
+                lines.add(
+                        String.join(
+                                "|",
+                                bus.getRouteId(),
+                                bus.getOrigin(),
+                                bus.getDestination(),
+                                bus.getDeparture().format(SAVE_FORMAT),
+                                String.valueOf(bus.getBasePrice()),
+                                bus.getBusType()
+                        )
+                );
+            }
+
+            Files.write(
+                    FILE,
+                    lines,
+                    StandardCharsets.UTF_8
+            );
+
+        } catch (IOException ex) {
+
+            System.out.println(
+                    "Error saving buses: " + ex.getMessage()
+            );
         }
     }
 }
